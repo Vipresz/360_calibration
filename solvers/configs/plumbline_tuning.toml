@@ -1,0 +1,263 @@
+# Plumb-line Solver Calibration Tuning
+# =====================================
+# Used by:  create_calibration.py --solver plumbline
+#           (auto-loaded from this path, or pass --config <file>)
+#
+# This file is for the PLUMB-LINE solver only.  See features_tuning.toml for
+# the SIFT/ORB-based seam-matching solver and adjoint_tuning.toml for the
+# photometric (adjoint) solver.
+#
+# How plumb-line calibration works
+# --------------------------------
+# A straight line in the world projects to a set of rays from the camera
+# origin that are all coplanar (the rays lie on a great circle of the unit
+# sphere).  The solver:
+#   1. Detects line SEGMENTS in each fisheye half independently (LSD or
+#      Canny + HoughLinesP).
+#   2. Samples N points along each segment, back-projects each to a 3-D
+#      world ray under the candidate lens model.
+#   3. Fits the best plane through the origin to each segment's rays via
+#      SVD.  The residual is the (signed) distance of each ray to the plane.
+#   4. scipy.least_squares minimises all residuals across segments / frames /
+#      lenses jointly, plus Tikhonov pulls toward the nominal values.
+#
+# What's observable, what's not
+# -----------------------------
+# Plumb-line residuals are INVARIANT under rotation: rotating all rays
+# rotates the fitted plane along with them.  Therefore lens rotation
+# (yaw / pitch / roll) is UNOBSERVABLE from plumb-line data alone, and is
+# `optimize = false` by default.  Only the per-lens INTRINSICS
+# (center, fov, k1/k2/k3) are observable.
+#
+# A nice side-effect: each lens is calibrated INDEPENDENTLY; the seam region
+# is irrelevant.  That makes plumb-line the best choice for refining
+# distortion/FOV when your scene has clear straight edges (architecture,
+# whiteboards, doorframes, brickwork) but the seam is featureless.
+#
+# Pipeline recommendation: run features (or stepwise) FIRST to get the
+# inter-lens rotation, then run plumbline to lock down each lens's intrinsics.
+#
+# UNITS
+#   center_x / center_y      : normalised image coords (0..1)
+#   fov                      : DEGREES
+#   k1 / k2 / k3             : dimensionless radial distortion
+#   rotation_yaw/pitch/roll  : RADIANS  (unobservable here -- left at nominal)
+# --------------------------------------------------------------------------------------
+
+
+# ---- Lens 1 (left half) ----------------------------------------------------------
+
+[lens1.center_x]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens1.center_y]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens1.fov]
+# Physical FOV of the Gear 360 lens in degrees.
+optimize = true
+nominal  = 185.0
+min      = 180.0
+max      = 195.0
+
+[lens1.k1]
+optimize = true
+nominal  = 0.0
+min      = -0.20
+max      = 0.20
+
+[lens1.k2]
+optimize = true
+nominal  = 0.0
+min      = -0.20
+max      = 0.20
+
+[lens1.k3]
+optimize = true
+nominal  = 0.0
+min      = -0.10
+max      = 0.10
+
+[lens1.rotation_yaw]
+# Unobservable from plumb-line residuals.  Keep optimize = false; if you set
+# it to true the optimiser will drift along this useless DOF.
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens1.rotation_pitch]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens1.rotation_roll]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+
+# ---- Lens 2 (right half) ---------------------------------------------------------
+# By default we DO NOT tie lens2 to lens1: the two physical lenses can have
+# different distortion profiles, and plumb-line calibrates each independently
+# (no shared seam data).  Set use_lens1 = true on a parameter if you trust
+# the two lenses to have identical intrinsics.
+
+[lens2.center_x]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens2.center_y]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens2.fov]
+optimize = true
+nominal  = 185.0
+min      = 180.0
+max      = 195.0
+
+[lens2.k1]
+optimize = true
+nominal  = 0.0
+min      = -0.20
+max      = 0.20
+
+[lens2.k2]
+optimize = true
+nominal  = 0.0
+min      = -0.20
+max      = 0.20
+
+[lens2.k3]
+optimize = true
+nominal  = 0.0
+min      = -0.10
+max      = 0.10
+
+[lens2.rotation_yaw]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens2.rotation_pitch]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens2.rotation_roll]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+
+# ---- Line-segment detection ------------------------------------------------------
+
+[plumbline]
+# Line-segment detector:
+#   "lsd"   - cv2.createLineSegmentDetector  (built-in OpenCV 4.5.5+;
+#             best results, cleanest segments)
+#   "fld"   - cv2.ximgproc.createFastLineDetector  (opencv-contrib only)
+#   "hough" - Canny + cv2.HoughLinesP  (always available, more noise)
+#   "auto"  - try lsd, then fld, then hough
+detector = "auto"
+
+# Minimum segment length in pixels.  Short segments are dominated by detector
+# noise and don't constrain the lens model.  Raise this for cleaner data.
+min_length_px = 40
+
+# Maximum segments to keep PER fisheye half PER frame (keep the longest).
+# Caps optimisation cost; values >300 rarely help.
+max_segments_per_half = 200
+
+# Number of points sampled along each segment.  Each sample contributes one
+# residual.  More samples = smoother optimisation surface but more compute.
+samples_per_segment = 8
+
+# Inset from the fisheye disk edge, as a fraction of the disk radius
+# (0 = use the full disk; 0.05 = drop the outer 5%).  The rim is where
+# distortion is highest *and* where line-detector noise is worst, so a
+# small inset usually helps.
+edge_margin_ratio = 0.05
+
+# HoughLinesP-only knobs (ignored for LSD / FLD).
+hough_canny_low   = 50
+hough_canny_high  = 150
+hough_threshold   = 60
+hough_max_gap_px  = 8
+
+# scipy.least_squares termination + budget.
+#
+# WHY YOU MIGHT TWEAK THESE
+#   The plumb-line residual measures within-segment NON-COPLANARITY.  The
+#   per-segment plane is re-fit every iteration, so the metric absorbs
+#   global error -- once you're at LSD's localisation noise floor (~0.1 deg
+#   at 640 px), the optimiser's proposed step falls below xtol almost
+#   immediately and it terminates after only a few iterations.  That's
+#   correct behaviour, not a bug.  Loosen these tolerances ONLY if you
+#   know the result hasn't really converged (e.g. you have very high-res
+#   input where the noise floor is much lower than 0.1 deg).
+#
+#   xtol     - relative param step size at termination (1e-6 default)
+#   ftol     - relative cost change at termination (1e-7 default)
+#   gtol     - gradient norm at termination (1e-8 default)
+#   max_nfev - hard cap on total function evaluations (600 default)
+xtol     = 1e-6
+ftol     = 1e-7
+gtol     = 1e-8
+max_nfev = 600
+
+
+# ---- Regularization (Tikhonov pull toward `nominal`) -----------------------------
+# Same convention as features_tuning.toml: residual rows added at ~ray-scale,
+# so a weight of 1.0 means "1 unit of param-deviation costs 1 ray-residual".
+#
+# Plumb-line data is much more informative for distortion than seam-feature
+# data, so we set lighter pulls than the features solver.  Crank these up
+# if you see parameters drift to the bounds.
+
+[regularization]
+enabled = true
+
+weight_center_x       = 5.0
+weight_center_y       = 5.0
+weight_fov            = 0.1
+weight_k1             = 1.0
+weight_k2             = 1.0
+weight_k3             = 2.0
+# These weights are still parsed even though the rotation params are
+# optimize = false by default; if you flip rotations to optimize = true
+# they'll govern the (useless) drift along that direction.
+weight_rotation_yaw   = 100.0
+weight_rotation_pitch = 100.0
+weight_rotation_roll  = 100.0
+
+
+# ---- Video frame sampling --------------------------------------------------------
+# Same semantics as adjoint_tuning.toml / features_tuning.toml.
+
+[video_sampling]
+# frame_stride = 1  -> spread frames evenly across the clip (linspace).
+# frame_stride = N  -> take frames at start_frame, start_frame+N, ...
+#
+# Plumb-line benefits from MORE frames (each frame contributes independent
+# segments), so a smaller stride / larger --frames is good.
+frame_stride = 10
+
+# First frame index when frame_stride > 1 (ignored for stride=1 even spread).
+start_frame  = 0

@@ -1,0 +1,241 @@
+# Features-Solver Calibration Tuning
+# ===================================
+# Used by:  create_calibration.py --solver features
+#           (auto-loaded from this path, or pass --config <file>)
+#
+# This file is for the FEATURE-BASED solver only.  See adjoint_tuning.toml for
+# the photometric (adjoint) solver.
+#
+# The features solver detects SIFT/ORB/AKAZE keypoints in the seam-overlap
+# strip of each lens's panorama, matches them, RANSACs by world-ray angular
+# residual, and then runs scipy.least_squares over every lens parameter to
+# minimise the 3-D ray residual between matched fisheye pixels.
+#
+# Per-parameter sections ([lens1.*] / [lens2.*]) use the SAME schema as
+# adjoint_tuning.toml:
+#   optimize = true  -> free to change, bounded by [min, max]
+#   optimize = false -> held at `nominal`
+#   use_lens1 = true -> (lens2 only) tied to lens1's value at every iteration
+#
+# UNITS
+#   center_x / center_y      : normalised image coords (0..1)
+#   fov                      : DEGREES
+#   k1 / k2 / k3             : dimensionless radial distortion
+#   rotation_yaw/pitch/roll  : RADIANS  (0.15 rad ~= 8.6 deg)
+# --------------------------------------------------------------------------------------
+
+
+# ---- Lens 1 (left half) ----------------------------------------------------------
+
+[lens1.center_x]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens1.center_y]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens1.fov]
+# Physical FOV of the Gear 360 lens in degrees.  Must be > 180 (the
+# hemisphere boundary) so that a seam-overlap region exists.
+optimize = true
+nominal  = 185.0
+min      = 180.0
+max      = 190.0
+
+[lens1.k1]
+# The seam-only feature data is poorly observable in the higher-order k
+# coefficients; tighter bounds + the [regularization] pull below keep them
+# physically plausible.
+optimize = true
+nominal  = 0.0
+min      = -0.10
+max      = 0.10
+
+[lens1.k2]
+optimize = true
+nominal  = 0.0
+min      = -0.10
+max      = 0.10
+
+[lens1.k3]
+optimize = true
+nominal  = 0.0
+min      = -0.05
+max      = 0.05
+
+[lens1.rotation_yaw]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens1.rotation_pitch]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens1.rotation_roll]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+
+# ---- Lens 2 (right half) ---------------------------------------------------------
+
+[lens2.center_x]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens2.center_y]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens2.fov]
+# Tied to lens1.fov by default (Gear 360 lenses share their physical FOV).
+optimize  = false
+nominal   = 185.0
+use_lens1 = true
+
+[lens2.k1]
+optimize = true
+nominal  = 0.0
+min      = -0.10
+max      = 0.10
+
+[lens2.k2]
+optimize = true
+nominal  = 0.0
+min      = -0.10
+max      = 0.10
+
+[lens2.k3]
+optimize = true
+nominal  = 0.0
+min      = -0.05
+max      = 0.05
+
+[lens2.rotation_yaw]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens2.rotation_pitch]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens2.rotation_roll]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+
+# ---- Feature detection / matching ------------------------------------------------
+
+[features]
+# Detector: "sift" (default, robust, slow), "orb" (fast, binary), "akaze"
+# (binary, scale-invariant).  CLI --detector overrides this for a single run.
+detector = "sift"
+
+# Lowe ratio test threshold.  Lower = stricter (fewer false positives, fewer
+# matches).  0.85 is a sane middle ground for the heavily vignetted seam
+# annulus; raise to 0.92 if matches are scarce.  CLI --ratio overrides.
+ratio = 0.8
+
+# RANSAC angular tolerance, in degrees.  A match survives RANSAC when the two
+# back-projected world rays agree to within this angle under the NOMINAL
+# calibration.  Increase if your starting calibration is far from the truth.
+# CLI --ransac-deg overrides.
+ransac_deg = 200
+
+# Minimum matches that must survive the fallback chain to attempt the
+# optimisation.  Each match contributes 3 residuals; with 18 unknowns,
+# 12 matches (36 residuals) is comfortably over-determined.
+min_matches =50
+
+# ----- Where to look for keypoints (the "seam strip") ------------------------
+# Same convention as adjoint_tuning.toml's [preprocessing].seam_overlap_*.
+#
+#   overlap_deg = 0.0   ->  use the GEOMETRIC overlap region of the two
+#                            lenses, i.e. FOV [180, lens.fov].  This is the
+#                            only zone where both lenses see the same world
+#                            point, so it's the natural default.
+#   overlap_deg > 0     ->  strip is FOV [centre - w/2, centre + w/2].
+#                            Use this to FORCE a narrower (or wider) zone.
+#                            Anything outside the geometric overlap is
+#                            still masked out by each lens's projection,
+#                            so widening doesn't add matches -- only
+#                            narrowing actually changes detection.
+#   overlap_center_deg = 0.0 ->  centre defaults to base_fov (180 deg, the
+#                                hemisphere boundary).
+#
+# Examples (FOV is the FULL angle, twice the angle from the lens boresight):
+#   overlap_deg = 10, overlap_center_deg = 0    -> strip FOV [175, 185]
+#   overlap_deg =  5, overlap_center_deg = 185  -> strip FOV [182.5, 187.5]
+#   overlap_deg =  4, overlap_center_deg = 181  -> strip FOV [179, 183]
+#
+# When to use:
+#   * Heavy vignetting at the rim          -> narrow strip near base_fov
+#                                             (e.g. overlap_deg = 5, centre
+#                                             slightly past 180 to avoid the
+#                                             darkest pixels).
+#   * Lens fov is uncertain (>>200 deg)   -> narrow + offset so SIFT only
+#                                             sees pixels both lenses
+#                                             definitely cover.
+#   * Otherwise (default)                 -> 0 (full geometric overlap).
+overlap_deg        = 30.0
+overlap_center_deg = 0.0
+
+
+# ---- Regularization (Tikhonov pull toward `nominal`) -----------------------------
+# Added as residual rows so least_squares sees them at the same scale as a
+# 3-D ray difference (range ~ [0, 2]).  A weight w on parameter p means a
+# deviation of `1/w` from `nominal` contributes one ray-residual's worth of
+# error; effectively a soft prior the data has to overcome.
+#
+# Why we need this: with seam-only matches, latitudes cluster near the
+# equator and the system is under-determined for the full 9-DOF/lens
+# space.  Without these weights k1/k2/k3 happily drift to absurd values
+# for a tiny improvement in seam accuracy.
+
+[regularization]
+enabled = true
+
+# Per-parameter weights (these are the same defaults baked into the solver
+# code; tighten any of them if you see a parameter drifting unrealistically).
+weight_center_x       = 1.0
+weight_center_y       = 1.0
+weight_fov            = 0.25    # FOV moves over a much wider numeric range
+weight_k1             = 1.0
+weight_k2             = 1.0
+weight_k3             = 1.0
+weight_rotation_yaw   = 1.0
+weight_rotation_pitch = 1.0
+weight_rotation_roll  = 1.0
+
+
+# ---- Video frame sampling --------------------------------------------------------
+# Same semantics as adjoint_tuning.toml.
+
+[video_sampling]
+# frame_stride = 1  -> spread frames evenly across the clip (linspace).
+# frame_stride = 15 -> take frames at start_frame, start_frame+15, ... until
+#                      --frames samples are collected.
+frame_stride = 10
+
+# First frame index when frame_stride > 1 (ignored for stride=1 even spread).
+start_frame  = 0

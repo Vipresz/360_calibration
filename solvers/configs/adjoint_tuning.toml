@@ -1,0 +1,271 @@
+# Adjoint-Solver Calibration Tuning
+# ==================================
+# Used by:  create_calibration.py --solver adjoint
+#           (auto-loaded from this path, or pass --config <file>)
+#
+# This file is for the ADJOINT solver only.  See features_tuning.toml for the
+# feature-based solver's settings.
+#
+# Controls which lens parameters the solver adjusts and which stay fixed.
+# For each parameter:
+#   optimize = true   -> solver is free to change this value
+#   optimize = false  -> held at `nominal` (ignored by the optimizer)
+#   nominal           -> starting value (used as-is when optimize = false)
+#   min / max         -> search bounds when optimize = true
+#   use_lens1 = true  -> (lens2 only) copy lens1's value; only honored when optimize = false
+#
+# UNITS
+#   center_x / center_y : normalised image coords (0..1)
+#   fov                 : DEGREES (e.g. 195.0)
+#   k1 / k2 / k3        : dimensionless radial-distortion coefficients
+#   rotation_yaw/pitch/roll : RADIANS  (0.15 rad ~= 8.6 deg)
+#   NOTE: the OUTPUT calibration.toml stores rotations in DEGREES.  The solver
+#   stores them in radians internally; do not paste degree values from
+#   calibration.toml into the `nominal` fields below without converting.
+# --------------------------------------------------------------------------------------
+
+
+# ---- Lens 1 (left half of the dual-fisheye frame) --------------------------------
+# Lens 1 is the reference.  Its rotation is fixed at zero — only the relative
+# rotation of lens 2 matters for stitching.
+
+[lens1.center_x]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens1.center_y]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens1.fov]
+# Physical FOV of the Gear 360 lens in degrees.
+# Gear 360 lenses are nominally ~195 deg.  Widen the range if the seam won't close.
+#
+# IMPORTANT: this MUST be strictly greater than the equirectangular base FOV
+# (180 deg per hemisphere; --fov on the CLI).  The seam optimizer aligns the
+# OVERLAP between the two lenses, which only exists when lens.fov > 180.
+# Setting min = 180 (or below) makes the lower part of the search useless;
+# use min = 185 or higher for a real Gear 360.
+optimize = true
+nominal  = 185
+min      = 180
+max      = 190
+
+[lens1.k1]
+# Primary radial distortion.  Usually the most important coefficient.
+optimize = true
+nominal  = 0.0
+min      = -0.1
+max      = 0.1
+
+[lens1.k2]
+# Secondary radial distortion.
+optimize = true
+nominal  = 0.0
+min      = -0.1
+max      = 0.1
+
+[lens1.k3]
+# Tertiary radial distortion.  Keep false unless k1/k2 converge cleanly first.
+optimize = true
+nominal  = 0.0
+min      = -0.1
+max      = 0.1
+
+[lens1.rotation_yaw]
+# Lens 1 is the reference orientation — keep fixed at zero.
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens1.rotation_pitch]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens1.rotation_roll]
+# Lens 1 is the reference; roll fixed at nominal (only lens2 roll is optimized).
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+
+# ---- Lens 2 (right half of the dual-fisheye frame) -------------------------------
+
+[lens2.center_x]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens2.center_y]
+optimize = true
+nominal  = 0.5
+min      = 0.48
+max      = 0.52
+
+[lens2.fov]
+# Gear 360 lenses share the same physical FOV — lock lens 2 to lens 1's value.
+optimize  = false
+nominal   = 195.0   # ignored when use_lens1 = true (FOV regularizer uses lens1 nominal only)
+use_lens1 = true    # mirror lens1.fov
+
+[lens2.k1]
+optimize = true
+nominal  = 0.0
+min      = -0.1
+max      = 0.1
+
+[lens2.k2]
+optimize = true
+nominal  = 0.0
+min      = -0.1
+max      = 0.1
+
+[lens2.k3]
+optimize = true
+nominal  = 0.0
+min      = -0.1
+max      = 0.1
+
+[lens2.rotation_yaw]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens2.rotation_pitch]
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+[lens2.rotation_roll]
+# Only rotation DOF we optimize: small twist between the two fisheye halves.
+optimize = true
+nominal  = 0.0
+min      = -0.15
+max      = 0.15
+
+
+# ---- Optimizer settings ----------------------------------------------------------
+
+[optimizer]
+strategy      = "best1bin"   # differential evolution mutation strategy
+maxiter       = 100          # maximum generations
+popsize       = 50           # population per parameter (total = popsize × n_params)
+tol           = 0.01         # convergence tolerance
+mutation      = [0.5, 1.0]   # mutation factor range
+recombination = 0.7
+
+
+# ---- Preprocessing ---------------------------------------------------------------
+
+[preprocessing]
+# Normalize brightness before comparing overlap pixels.
+# Strongly recommended -- avoids optimizing for brightness match instead of alignment.
+# Auto-disabled when comparison_mode = "edges" (gradients are already brightness-invariant).
+normalize_lighting = true
+
+# Fraction of the fisheye radius to exclude at the very edge of each lens.
+# The extreme edge has vignetting and distortion that corrupt the optimization signal.
+# 0.05 = ignore outermost 5%.  Increase to 0.08-0.10 for noisy / wide-angle lenses.
+edge_margin_ratio = 0.01
+
+# Vignette correction: flatten the radial brightness fall-off of each fisheye
+# circle BEFORE comparing the overlap.  Strongly recommended for Gear 360,
+# whose lenses lose a large fraction of brightness at the rim where the seam lives.
+# Done once per frame (not per optimizer iteration), so runtime cost is negligible.
+vignette_correction = true
+
+# 0.0 = no correction, 1.0 = fully flatten to centre brightness.
+# Lower this if the corrected image looks washed-out near the rim.
+vignette_strength = 3.0
+
+# How the seam overlap is compared:
+#   "intensity" -- compare raw (optionally normalized + vignette-corrected) pixels.
+#                  Default; works well when both lenses are similarly exposed.
+#   "edges"     -- compare gradient magnitudes (brightness-invariant).
+#                  Use this when exposure / colour balance differs noticeably
+#                  between lens 1 and lens 2.  Aligns on STRUCTURE, not colour.
+comparison_mode = "intensity"
+
+# Edge operator (only used when comparison_mode = "edges"):
+#   "sobel"     -- Sobel x/y magnitude.  Smooth, default, good general signal.
+#   "scharr"    -- Scharr operator; more accurate than Sobel at small kernels.
+#   "laplacian" -- Isotropic |Laplacian|.  Stronger response to thin features.
+#   "canny"     -- Binary Canny edges.  Sparse, sharp; only matches when edges
+#                  align very precisely.
+edge_method = "canny"
+
+# Seam comparison strip in FOV space.
+#
+# ``seam_overlap_deg`` is the TOTAL width of the strip in degrees of FOV.
+# ``seam_overlap_center_deg`` is the centre of the strip in degrees of FOV.
+#
+# Both are in the same units as ``lens.fov`` (twice the angular distance from
+# the lens boresight).  The strip spans
+#     FOV [center - width/2, center + width/2]
+# on each side of the panorama.
+#
+# IMPORTANT: the centre is FIXED -- it does NOT follow the dynamic ``lens.fov``
+# during optimisation.  If it did, the optimiser could game the metric by
+# shifting ``lens.fov`` to drag the strip onto a more convenient patch of
+# pixels.  Pin the centre to a value that is physically inside the lens-to-
+# lens overlap region (typically ``base_fov + 1..5`` deg).
+#
+# Examples:
+#   width=2.0, center=181  ->  strip FOV [180, 182]    (just past base_fov)
+#   width=2.0, center=185  ->  strip FOV [184, 186]
+#   width=1.0, center=187  ->  strip FOV [186.5, 187.5]
+#
+# Defaults:
+#   ``seam_overlap_deg = 0`` (legacy) -> use the full geometric overlap
+#                                        FOV [base_fov, lens_fov].
+#   ``seam_overlap_center_deg = 0``  -> centre at ``base_fov`` (180 deg).
+#
+# Override at the CLI with --seam-overlap-deg / --seam-overlap-center-deg.
+seam_overlap_deg        = 5.0
+seam_overlap_center_deg = 0.0
+
+
+# ---- Video frame sampling (create_calibration.py --video only) -------------------
+# How frames are chosen from the video file.  CLI --frames caps how many are kept.
+# CLI --frame-stride overrides ``frame_stride`` here for a single run.
+
+[video_sampling]
+# frame_stride = 1  -> spread frames evenly across the clip (linspace), good default.
+# frame_stride = 15 -> take frames at indices start_frame, start_frame+15,
+#                      start_frame+30, ... until --frames samples are collected
+#                      or the end of the file is reached.
+frame_stride  = 15
+
+# First frame index when using frame_stride > 1 (ignored for stride=1 even spread).
+start_frame   = 0
+
+
+# ---- Regularization --------------------------------------------------------------
+# Prevents the optimizer from drifting to extreme values that fit the training
+# frames but generalise poorly.  Set enabled = false to run pure seam minimisation.
+
+[regularization]
+enabled = true
+
+# Penalty for optical centres deviating from their nominal (0.5, 0.5).
+lambda_center = 1.0
+
+# Penalty for FOV deviating from nominal.
+lambda_fov = 0.0
+
+# Penalty for distortion coefficients growing large.
+lambda_distortion = 1.0
+
+# Penalty for rotation angles growing large.
+lambda_rotation = 1.0
