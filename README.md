@@ -9,7 +9,9 @@ Python tools to **fit lens and stitch parameters** from stills or video and writ
 
 ### Example projections (`images/`)
 
-Single-lens fisheye input and the two **`projections/`** outputs (filenames are historical spellings):
+Single-lens fisheye input and the two **`projections/`** outputs. On disk: rectilinear uses `single_lens_rectilinear.png`; equirectangular uses `single_lens_equarectangular.png` (filename keeps the old “equarectangular” spelling).
+
+If a preview still looks wrong after you swap or replace PNGs, reload the Markdown preview or restart the editor—many UIs cache image binaries by path. On GitHub, push the commit and hard-refresh the page (`Ctrl+F5`).
 
 **Input (fisheye)** — `single_lens.png`
 
@@ -17,7 +19,7 @@ Single-lens fisheye input and the two **`projections/`** outputs (filenames are 
 
 **Rectilinear** — `single_lens_rectilinear.png`
 
-![](images/single_lens_rectalinear.png)
+![](images/single_lens_rectilinear.png)
 
 **Equirectangular** — `single_lens_equarectangular.png`
 
