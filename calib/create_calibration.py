@@ -60,7 +60,7 @@ def write_toml(params: dict, path: str, method: str = "create_calibration") -> N
     Field mapping:
       lens1CenterX/Y          -> [lens1] center_x / center_y
       lens1K1/K2/K3           -> [lens1] p1 / p2 / p3  (p4 always 0)
-      lens1FOV (deg or scale) -> [lens1] fov  (scale factor)
+      lens1FOV / lens2FOV     -> averaged into [metadata] fov_deg (degrees only)
       lens1RotationYaw/...    -> [lens1] rotation_* (degrees)
     """
     lines = [
@@ -71,7 +71,6 @@ def write_toml(params: dict, path: str, method: str = "create_calibration") -> N
     ]
 
     for lens, px in (("lens1", "lens1"), ("lens2", "lens2")):
-        fov_scale = _fov_to_scale(params.get(f"{px}FOV", 195.0 / 180.0))
         lines += [
             f"[{lens}]",
             "# Lens center (normalized 0-1)",
@@ -84,9 +83,6 @@ def write_toml(params: dict, path: str, method: str = "create_calibration") -> N
             f"p3 = {params.get(f'{px}K3', 0.0):.6f}",
             f"p4 = 0.0",
             "",
-            "# FOV scale (1.0 = 180 deg)",
-            f"fov = {fov_scale:.6f}",
-            "",
             "# Per-lens rotation (degrees)",
             f"rotation_yaw   = {math.degrees(params.get(f'{px}RotationYaw',   0.0)):.4f}",
             f"rotation_pitch = {math.degrees(params.get(f'{px}RotationPitch', 0.0)):.4f}",
@@ -98,11 +94,13 @@ def write_toml(params: dict, path: str, method: str = "create_calibration") -> N
             "",
         ]
 
-    fov_deg = _fov_to_scale(params.get("lens1FOV", 195.0 / 180.0)) * 180.0
+    deg1 = _fov_to_scale(params.get("lens1FOV", 195.0 / 180.0)) * 180.0
+    deg2 = _fov_to_scale(params.get("lens2FOV", 195.0 / 180.0)) * 180.0
+    fov_deg_out = (deg1 + deg2) / 2.0
     lines += [
         "[metadata]",
-        "# Lens FOV in degrees (physical lens specification)",
-        f"lens_fov_deg       = {fov_deg:.1f}",
+        "# Fisheye FOV in degrees (viewer uses scale = fov_deg / 180 for both lenses)",
+        f"fov_deg = {fov_deg_out:.1f}",
         f'calibration_method = "{method}"',
         "",
     ]

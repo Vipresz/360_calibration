@@ -107,7 +107,8 @@ class CameraCalibration:
         """Load calibration from TOML file (cpp/calibration.toml format).
 
         TOML format differences from the internal JSON format:
-          - fov is a scale factor (1.0 = 180 deg), converted to degrees here.
+          - Prefer [metadata] fov_deg (degrees) for both lenses; else [lens1]/[lens2]
+            fov as scale (1.0 = 180 deg) or degrees.
           - distortion uses p1/p2/p3 keys (mapped to k1/k2/k3).
           - rotation_yaw/pitch/roll are stored in degrees, converted to radians.
         """
@@ -126,9 +127,19 @@ class CameraCalibration:
         with open_fn(filepath) as f:
             data = load_fn(f)
 
+        meta = data.get('metadata') or {}
+        shared_fov_deg = None
+        if 'fov_deg' in meta:
+            shared_fov_deg = float(meta['fov_deg'])
+        elif 'lens_fov_deg' in meta:
+            shared_fov_deg = float(meta['lens_fov_deg'])
+
         def _parse_lens(section):
-            fov_raw = section.get('fov', 1.0)
-            fov_deg = fov_raw * 180.0 if fov_raw < 10.0 else fov_raw
+            if shared_fov_deg is not None:
+                fov_deg = shared_fov_deg
+            else:
+                fov_raw = section.get('fov', 1.0)
+                fov_deg = fov_raw * 180.0 if fov_raw < 10.0 else fov_raw
             return LensCalibration(
                 center_x=section.get('center_x', 0.5),
                 center_y=section.get('center_y', 0.5),
