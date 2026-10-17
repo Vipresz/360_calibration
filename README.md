@@ -25,4 +25,23 @@ If a preview still looks wrong after you swap or replace PNGs, reload the Markdo
 
 ![](images/single_lens_equarectangular.png)
 
-Quick start: from `calib/`, run `create_calibration.py` with `--help`, or see the module docstring at the top of `create_calibration.py` for examples and solver tuning paths under `solvers/configs/`.
+Quick start: from `calib/`, run `create_calibration.py` with `--help`, or see the module docstring at the top of `create_calibration.py`.
+
+### Stitch a video
+
+`realtime/stitcher.py` writes a video from a side-by-side clip and a calibration file. Rectilinear and 360 call `projections/stitch_dual_fisheye` with that file on every frame, so the seam stays fixed. The default format, `fisheye`, copies the original frames and does not need a calibration file.
+
+```bash
+python camera_calibration/realtime/stitcher.py clip.mp4 --calibration calibration.toml --output_format 360 -o clip_360.mp4
+python camera_calibration/realtime/stitcher.py clip.mp4 --calibration calibration.toml --output_format rectalinear
+```
+
+`360` is equirectangular and tagged so a 360 player can look around. `rectalinear` is a flat view. The Python viewer uses the same TOML when its Stitch control is on.
+
+`RealtimeStitcher` can still estimate a seam shift per frame. The commands above do not use it.
+
+Accuracy of that per-frame estimator is checked against a known synthetic panorama: at least 99 percent of usable seam pixels must fall within 8 gray levels of the source. Run:
+
+```bash
+py -3.12 -m unittest camera_calibration.tests.test_realtime_stitch -v
+```
